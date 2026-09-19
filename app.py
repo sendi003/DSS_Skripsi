@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
+import math
 
 # ==========================================
 # KONFIGURASI HALAMAN
@@ -142,20 +143,36 @@ with col4:
     st.altair_chart(chart_rata_pred, use_container_width=True)
 
 # ==========================================
-# 6. EVALUASI MODEL & KEPUTUSAN DSS
+# 6. EVALUASI MODEL
 # ==========================================
 st.write("---")
 st.header("✅ 4. Evaluasi Performa Model (MAE & RMSE)")
 st.dataframe(df_eval[['Kluster', 'Poli', 'Mode_Seasonality', 'MAE_CrossValidation', 'RMSE_CrossValidation']], use_container_width=True)
 
+# ==========================================
+# 7. KEPUTUSAN DSS (REKOMENDASI KUOTA KONKRET)
+# ==========================================
 st.write("---")
-st.header("💡 5. Rekomendasi Tindakan (DSS Output)")
-if not rata_pred_jam.empty:
-    jam_puncak = rata_pred_jam.loc[rata_pred_jam['Jumlah_Pasien_Prediksi'].idxmax()]
-    st.error(f"🚨 **Peringatan Penumpukan:** Berdasarkan rentang prediksi yang dipilih, puncak kunjungan diperkirakan terjadi pada jam **{jam_puncak['Jam_Format']}** dengan rata-rata **{jam_puncak['Jumlah_Pasien_Prediksi']} pasien/jam**.")
-    st.markdown(f"""
-    **Rekomendasi Kebijakan bagi Manajemen Puskesmas:**
-    * **Pembatasan Kuota:** Disarankan membatasi pendaftaran pada jam {jam_puncak['Jam_Format']} sesuai nilai prediksi tersebut.
-    * **Distribusi Antrean:** Arahkan pasien non-gawat darurat untuk datang pada jam operasional siang yang secara data lebih lengang.
-    * **Alokasi SDM:** Jangan jadwalkan istirahat bergilir bagi staf pada pukul {jam_puncak['Jam_Format']}.
-    """)
+st.header("💡 5. Rekomendasi Keputusan Kuota (DSS Output)")
+st.markdown("Berdasarkan evaluasi model, tingkat error prediksi (Prophet) memiliki fluktuasi. Oleh karena itu, sesuai pedoman penelitian, rekomendasi penetapan kuota pendaftaran harian didasarkan pada perhitungan **rata-rata beban historis maksimal** pada rentang waktu yang difilter.")
+
+if not df_aktual_filtered.empty:
+    # Membuat hitungan kuota dinamis seperti Tabel 4.9 di skripsi
+    df_rekomendasi = df_aktual_filtered.groupby('Jam_Format').agg(
+        Rata_Rata_Kunjungan=('Jumlah_Pasien_Aktual', 'mean'),
+        Kunjungan_Maksimal_Pernah_Terjadi=('Jumlah_Pasien_Aktual', 'max')
+    ).reset_index()
+    
+    # Rekomendasi kuota = rata-rata dibulatkan ke atas (sesuai logika Tabel 4.9 Bab 4)
+    df_rekomendasi['Rata_Rata_Kunjungan'] = df_rekomendasi['Rata_Rata_Kunjungan'].round(2)
+    df_rekomendasi['Rekomendasi_Kuota_Pendaftaran'] = df_rekomendasi['Rata_Rata_Kunjungan'].apply(lambda x: math.ceil(x))
+    
+    # Menampilkan tabel DSS
+    st.dataframe(df_rekomendasi, use_container_width=True)
+    
+    # Mencari jam paling rawan (kuota tertinggi)
+    jam_puncak_hist = df_rekomendasi.loc[df_rekomendasi['Rekomendasi_Kuota_Pendaftaran'].idxmax()]
+    
+    st.error(f"🚨 **TINDAKAN DSS:** Jam **{jam_puncak_hist['Jam_Format']}** adalah waktu paling kritis. Jika jumlah pendaftar pada jam tersebut sudah mencapai **{jam_puncak_hist['Rekomendasi_Kuota_Pendaftaran']} pasien**, sistem menyarankan staf untuk **menyetop antrean** dan mengarahkan sisa pasien ke jam berikutnya.")
+else:
+    st.info("Pilih rentang data historis yang valid di sidebar untuk melihat rekomendasi kuota.")
