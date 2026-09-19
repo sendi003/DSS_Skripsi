@@ -160,14 +160,17 @@ with col4:
     ).properties(height=300, title=f"Prediksi ({start_p} s/d {end_p})")
     st.altair_chart(chart_rata_pred, use_container_width=True)
 
-# ==========================================
-# 6. EVALUASI MODEL
-# ==========================================
 st.write("---")
 st.header("✅ 4. Evaluasi Performa Model (MAE & RMSE)")
 
+# Mengambil kolom yang dibutuhkan
+df_eval_tampil = df_eval[['Kluster', 'Poli', 'Mode_Seasonality', 'MAE_CrossValidation', 'RMSE_CrossValidation']].copy()
+
+# MEMBATASI ANGKA DI BELAKANG KOMA (Maksimal 2 digit)
+df_eval_tampil['MAE_CrossValidation'] = df_eval_tampil['MAE_CrossValidation'].map('{:.2f}'.format)
+df_eval_tampil['RMSE_CrossValidation'] = df_eval_tampil['RMSE_CrossValidation'].map('{:.2f}'.format)
+
 # MENERAPKAN WARNA HIJAU PADA TABEL EVALUASI
-df_eval_tampil = df_eval[['Kluster', 'Poli', 'Mode_Seasonality', 'MAE_CrossValidation', 'RMSE_CrossValidation']]
 st.table(format_tabel_hijau(df_eval_tampil))
 
 # ==========================================
@@ -183,13 +186,18 @@ if not df_aktual_filtered.empty:
         Kunjungan_Maksimal_Pernah_Terjadi=('Jumlah_Pasien_Aktual', 'max')
     ).reset_index()
     
-    df_rekomendasi['Rata_Rata_Kunjungan'] = df_rekomendasi['Rata_Rata_Kunjungan'].round(2)
+    # Menghitung rekomendasi kuota (dibulatkan ke atas)
     df_rekomendasi['Rekomendasi_Kuota_Pendaftaran'] = df_rekomendasi['Rata_Rata_Kunjungan'].apply(lambda x: math.ceil(x))
+    
+    # Mencari jam paling rawan SEBELUM format string diubah
+    jam_puncak_hist = df_rekomendasi.loc[df_rekomendasi['Rekomendasi_Kuota_Pendaftaran'].idxmax()]
+    
+    # MEMBATASI ANGKA DI BELAKANG KOMA PADA TABEL REKOMENDASI (Maksimal 2 digit untuk rata-rata, angka bulat untuk total)
+    df_rekomendasi['Rata_Rata_Kunjungan'] = df_rekomendasi['Rata_Rata_Kunjungan'].map('{:.2f}'.format)
+    df_rekomendasi['Kunjungan_Maksimal_Pernah_Terjadi'] = df_rekomendasi['Kunjungan_Maksimal_Pernah_Terjadi'].astype(int)
     
     # MENERAPKAN WARNA HIJAU PADA TABEL REKOMENDASI DSS
     st.table(format_tabel_hijau(df_rekomendasi))
-    
-    jam_puncak_hist = df_rekomendasi.loc[df_rekomendasi['Rekomendasi_Kuota_Pendaftaran'].idxmax()]
     
     st.error(f"🚨 **TINDAKAN DSS:** Jam **{jam_puncak_hist['Jam_Format']}** adalah waktu paling kritis. Jika jumlah pendaftar pada jam tersebut sudah mencapai **{jam_puncak_hist['Rekomendasi_Kuota_Pendaftaran']} pasien**, sistem menyarankan staf untuk **menyetop antrean** dan mengarahkan sisa pasien ke jam berikutnya.")
 else:
