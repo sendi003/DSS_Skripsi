@@ -36,28 +36,25 @@ def format_tabel_hijau(df):
     ])
 
 # ==========================================
-# 1. MENU UPLOAD FILE (DRAG AND DROP) DI SIDEBAR
+# 1. MENU UPLOAD FILE (BERSIH, TANPA NAMA SPESIFIK)
 # ==========================================
 st.sidebar.header("📁 Manajemen Data")
 st.sidebar.markdown("Upload file Excel terbaru jika diperlukan:")
 
-file_looker = st.sidebar.file_uploader("1. Upload data_untuk_looker_studio6.xlsx", type=["xlsx", "xls"])
-file_filterable = st.sidebar.file_uploader("2. Upload rata_rata_jam_filterable.xlsx", type=["xlsx", "xls"])
-file_eval = st.sidebar.file_uploader("3. Upload metrik_evaluasi.xlsx", type=["xlsx", "xls"])
+# Kotak uploader dibuat umum dan bersih
+file_looker = st.sidebar.file_uploader("Upload File Tren & Pola (Looker Studio)", type=["xlsx", "xls"])
+file_filterable = st.sidebar.file_uploader("Upload File Jam Aktual & Prediksi", type=["xlsx", "xls"])
+file_eval = st.sidebar.file_uploader("Upload File Metrik Evaluasi", type=["xlsx", "xls"])
 
-# Logika: Jika user belum upload file lewat web, sistem otomatis membaca file cadangan di GitHub.
-# Jika user meng-upload file baru, sistem menggunakan file yang di-upload tersebut secara real-time.
 @st.cache_data
 def load_data_from_source(f_looker, f_filter, f_eval):
     try:
-        # Sumber Looker Studio
         path_looker = f_looker if f_looker is not None else 'data_untuk_looker_studio6.xlsx'
         df_looker = pd.read_excel(path_looker)
         df_looker['ds'] = pd.to_datetime(df_looker['ds'])
         df_looker['Tanggal'] = df_looker['ds'].dt.date
         df_looker['Bulan_Tahun'] = df_looker['ds'].dt.to_period('M').astype(str)
         
-        # Sumber Filterable (Aktual & Prediksi)
         path_filter = f_filter if f_filter is not None else 'rata_rata_jam_filterable.xlsx'
         df_aktual = pd.read_excel(path_filter, sheet_name='Aktual_per_Jam')
         df_aktual['Tanggal'] = pd.to_datetime(df_aktual['Tanggal']).dt.date
@@ -67,7 +64,6 @@ def load_data_from_source(f_looker, f_filter, f_eval):
         df_prediksi['Tanggal'] = pd.to_datetime(df_prediksi['Tanggal']).dt.date
         df_prediksi['Jam_Format'] = df_prediksi['Jam'].apply(lambda x: f"{int(x):02d}.00")
         
-        # Sumber Evaluasi
         path_eval = f_eval if f_eval is not None else 'metrik_evaluasi.xlsx'
         df_eval = pd.read_excel(path_eval, sheet_name='Metrik_Kumulatif_Bab4')
         
