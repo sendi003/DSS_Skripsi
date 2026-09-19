@@ -2,112 +2,160 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 
-# Konfigurasi Halaman
+# ==========================================
+# KONFIGURASI HALAMAN
+# ==========================================
 st.set_page_config(page_title="DSS Puskesmas Leuwigoong", layout="wide")
 st.title("Sistem Pendukung Keputusan (DSS) Kunjungan Pasien")
-st.markdown("Dashboard ini menampilkan pola, tren, prediksi kunjungan, serta **Rekomendasi Kuota** untuk mencegah penumpukan pasien di UPT Puskesmas Leuwigoong.")
+st.markdown("UPT Puskesmas Leuwigoong - Dashboard Analisis Pola, Tren, dan Prediksi")
 
 # ==========================================
-# 1. MEMUAT DATA (Dari hasil script asli Anda)
+# 1. MEMUAT 3 FILE EXCEL SEKALIGUS
 # ==========================================
 @st.cache_data
 def load_data():
-    try:
-        # Membaca data yang sudah diolah oleh script asli Anda
-        df_aktual = pd.read_excel('rata_rata_jam_filterable.xlsx', sheet_name='Aktual_per_Jam')
-        df_prediksi = pd.read_excel('rata_rata_jam_filterable.xlsx', sheet_name='Prediksi_per_Jam')
-        df_evaluasi = pd.read_excel('metrik_evaluasi.xlsx', sheet_name='Metrik_Kumulatif_Bab4')
-        return df_aktual, df_prediksi, df_evaluasi
-    except FileNotFoundError:
-        st.error("File Excel tidak ditemukan. Pastikan file 'rata_rata_jam_filterable.xlsx' dan 'metrik_evaluasi.xlsx' berada di folder yang sama.")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-
-df_aktual, df_prediksi, df_evaluasi = load_data()
-
-if not df_aktual.empty:
-    # ==========================================
-    # 2. FITUR FILTER (Di Sidebar)
-    # ==========================================
-    st.sidebar.header("Filter Data")
+    # 1. Load Data Looker Studio (Untuk Tren dan Pola)
+    df_looker = pd.read_excel('data_untuk_looker_studio6.xlsx')
+    df_looker['ds'] = pd.to_datetime(df_looker['ds'])
+    df_looker['Tanggal'] = df_looker['ds'].dt.date
+    df_looker['Bulan_Tahun'] = df_looker['ds'].dt.to_period('M').astype(str)
     
-    # Filter Poli
-    daftar_poli = ["Semua Poli"] + list(df_aktual['Poli'].unique())
-    pilihan_poli = st.sidebar.selectbox("Pilih Poli:", daftar_poli)
+    # 2. Load Data Granular (Untuk Rata-Rata Kunjungan & Prediksi)
+    df_aktual = pd.read_excel('rata_rata_jam_filterable.xlsx', sheet_name='Aktual_per_Jam')
+    df_aktual['Tanggal'] = pd.to_datetime(df_aktual['Tanggal']).dt.date
+    # MERUBAH FORMAT JAM MENJADI 08.00
+    df_aktual['Jam_Format'] = df_aktual['Jam'].apply(lambda x: f"{int(x):02d}.00") 
     
-    # Filter Hari
-    daftar_hari = ["Semua Hari"] + list(df_aktual['Nama_Hari'].unique())
-    pilihan_hari = st.sidebar.selectbox("Pilih Hari:", daftar_hari)
-
-    # Proses Filtering Data Aktual
-    df_aktual_filtered = df_aktual.copy()
-    df_prediksi_filtered = df_prediksi.copy()
-
-    if pilihan_poli != "Semua Poli":
-        df_aktual_filtered = df_aktual_filtered[df_aktual_filtered['Poli'] == pilihan_poli]
-        df_prediksi_filtered = df_prediksi_filtered[df_prediksi_filtered['Poli'] == pilihan_poli]
-        
-    if pilihan_hari != "Semua Hari":
-        df_aktual_filtered = df_aktual_filtered[df_aktual_filtered['Nama_Hari'] == pilihan_hari]
-        df_prediksi_filtered = df_prediksi_filtered[df_prediksi_filtered['Nama_Hari'] == pilihan_hari]
-
-    # ==========================================
-    # 3. VISUALISASI POLA & PREDIKSI
-    # ==========================================
-    st.write("---")
-    col1, col2 = st.columns(2)
+    df_prediksi = pd.read_excel('rata_rata_jam_filterable.xlsx', sheet_name='Prediksi_per_Jam')
+    df_prediksi['Tanggal'] = pd.to_datetime(df_prediksi['Tanggal']).dt.date
+    # MERUBAH FORMAT JAM MENJADI 08.00
+    df_prediksi['Jam_Format'] = df_prediksi['Jam'].apply(lambda x: f"{int(x):02d}.00")
     
-    with col1:
-        st.subheader("Pola Kunjungan Aktual per Jam")
-        # Agregasi rata-rata per jam
-        rata_aktual = df_aktual_filtered.groupby('Jam')['Jumlah_Pasien_Aktual'].mean().reset_index()
-        chart_aktual = alt.Chart(rata_aktual).mark_bar(color='#F5821F').encode(
-            x=alt.X('Jam:O', title='Jam Operasional'),
-            y=alt.Y('Jumlah_Pasien_Aktual:Q', title='Rata-Rata Pasien'),
-            tooltip=['Jam', 'Jumlah_Pasien_Aktual']
-        ).properties(height=300)
-        st.altair_chart(chart_aktual, use_container_width=True)
-
-    with col2:
-        st.subheader("Prediksi Kunjungan per Jam (Masa Depan)")
-        rata_prediksi = df_prediksi_filtered.groupby('Jam')['Jumlah_Pasien_Prediksi'].mean().reset_index()
-        chart_prediksi = alt.Chart(rata_prediksi).mark_bar(color='#1F77B4').encode(
-            x=alt.X('Jam:O', title='Jam Operasional'),
-            y=alt.Y('Jumlah_Pasien_Prediksi:Q', title='Prediksi Pasien'),
-            tooltip=['Jam', 'Jumlah_Pasien_Prediksi']
-        ).properties(height=300)
-        st.altair_chart(chart_prediksi, use_container_width=True)
-
-    # ==========================================
-    # 4. EVALUASI MODEL (MAE & RMSE)
-    # ==========================================
-    st.write("---")
-    st.subheader("Evaluasi Performa Model (Validasi)")
-    st.markdown("Tabel ini membuktikan bahwa prediksi yang dihasilkan memiliki tingkat error yang wajar berdasarkan metrik *Mean Absolute Error* (MAE) dan *Root Mean Squared Error* (RMSE).")
+    # 3. Load Metrik Evaluasi
+    df_eval = pd.read_excel('metrik_evaluasi.xlsx', sheet_name='Metrik_Kumulatif_Bab4')
     
-    if pilihan_poli != "Semua Poli":
-        df_eval_show = df_evaluasi[df_evaluasi['Poli'] == pilihan_poli]
-    else:
-        df_eval_show = df_evaluasi
-        
-    st.dataframe(df_eval_show[['Kluster', 'Poli', 'Mode_Seasonality', 'MAE_CrossValidation', 'RMSE_CrossValidation']], use_container_width=True)
+    return df_looker, df_aktual, df_prediksi, df_eval
 
-    # ==========================================
-    # 5. KEPUTUSAN DSS (REKOMENDASI KUOTA)
-    # ==========================================
-    st.write("---")
-    st.header("Rekomendasi Tindakan (Decision Support)")
-    st.info(f"Berdasarkan analisis prediksi untuk **{pilihan_poli}** pada **{pilihan_hari}**, berikut adalah peringatan jam sibuk dan saran tindakan untuk staf Puskesmas.")
+# Memanggil fungsi load data
+try:
+    df_looker, df_aktual, df_prediksi, df_eval = load_data()
+except Exception as e:
+    st.error("Gagal memuat file Excel. Pastikan ketiga file berada di folder yang sama dengan app.py!")
+    st.stop()
 
-    # Logika DSS sederhana: Jika rata-rata prediksi di atas threshold tertentu, beri peringatan
-    if not rata_prediksi.empty:
-        # Menentukan jam paling sibuk
-        jam_puncak = rata_prediksi.loc[rata_prediksi['Jumlah_Pasien_Prediksi'].idxmax()]
-        
-        st.warning(f"⚠️ **Potensi Penumpukan Tertinggi:** Terdeteksi pada jam **{int(jam_puncak['Jam']):02d}.00** dengan estimasi rata-rata **{jam_puncak['Jumlah_Pasien_Prediksi']:.1f} pasien**.")
-        
-        st.markdown(f"""
-        **Saran Pengambilan Keputusan untuk Manajemen Puskesmas:**
-        1. **Pembatasan Kuota:** Tetapkan batas maksimal pendaftaran pada jam {int(jam_puncak['Jam']):02d}.00.
-        2. **Load Balancing:** Jika pasien datang pada jam tersebut dan kondisi tidak gawat darurat, sarankan pasien untuk mengambil antrean pada jam operasional siang (misal: 11.00 - 13.00) yang terbukti secara data lebih lengang.
-        3. **Alokasi SDM:** Pastikan tenaga medis dan staf pendaftaran *standby* penuh (tidak ada jadwal istirahat/jaga bergantian) pada pukul {int(jam_puncak['Jam']):02d}.00 hingga {int(jam_puncak['Jam'])+1:02d}.00.
-        """)
+# Mengambil hanya data Historis dari file Looker
+df_looker_hist = df_looker[df_looker['Status_Data'] == 'Historis']
+
+# ==========================================
+# 2. FITUR FILTER RENTANG WAKTU (SIDEBAR)
+# ==========================================
+st.sidebar.header("⚙️ Filter Rentang Waktu")
+
+# A. Filter Historis (Untuk Pola, Tren, dan Rata-rata Aktual)
+st.sidebar.subheader("📅 Rentang Data Historis")
+min_date_h = df_looker_hist['Tanggal'].min()
+max_date_h = df_looker_hist['Tanggal'].max()
+rentang_hist = st.sidebar.date_input("Pilih Tanggal Historis:", [min_date_h, max_date_h], min_value=min_date_h, max_value=max_date_h)
+
+# B. Filter Prediksi (Untuk Rata-rata Prediksi)
+st.sidebar.subheader("🔮 Rentang Data Prediksi")
+min_date_p = df_prediksi['Tanggal'].min()
+max_date_p = df_prediksi['Tanggal'].max()
+rentang_pred = st.sidebar.date_input("Pilih Tanggal Prediksi:", [min_date_p, max_date_p], min_value=min_date_p, max_value=max_date_p)
+
+# Penanganan error jika user baru klik 1 tanggal di kalender
+start_h, end_h = rentang_hist if len(rentang_hist) == 2 else (min_date_h, max_date_h)
+start_p, end_p = rentang_pred if len(rentang_pred) == 2 else (min_date_p, max_date_p)
+
+# PENERAPAN FILTER TANGGAL KE DATAFRAME
+df_looker_filtered = df_looker_hist[(df_looker_hist['Tanggal'] >= start_h) & (df_looker_hist['Tanggal'] <= end_h)]
+df_aktual_filtered = df_aktual[(df_aktual['Tanggal'] >= start_h) & (df_aktual['Tanggal'] <= end_h)]
+df_prediksi_filtered = df_prediksi[(df_prediksi['Tanggal'] >= start_p) & (df_prediksi['Tanggal'] <= end_p)]
+
+# ==========================================
+# 3. VISUALISASI TREN KUNJUNGAN (DARI DATA LOOKER)
+# ==========================================
+st.write("---")
+st.header("📈 1. Tren Kunjungan Pasien (Bulanan)")
+tren_bulanan = df_looker_filtered.groupby('Bulan_Tahun')['y'].sum().reset_index()
+chart_tren = alt.Chart(tren_bulanan).mark_line(point=True, color='#2CA02C', strokeWidth=3).encode(
+    x=alt.X('Bulan_Tahun:N', title='Bulan', sort=None),
+    y=alt.Y('y:Q', title='Total Kunjungan'),
+    tooltip=['Bulan_Tahun', 'y']
+).properties(height=350)
+st.altair_chart(chart_tren, use_container_width=True)
+
+# ==========================================
+# 4. VISUALISASI POLA KUNJUNGAN (DARI DATA LOOKER)
+# ==========================================
+st.write("---")
+st.header("📊 2. Pola Kunjungan (Berdasarkan Poli & Hari)")
+col1, col2 = st.columns(2)
+
+with col1:
+    pola_poli = df_looker_filtered.groupby('Poli')['y'].sum().reset_index()
+    chart_poli = alt.Chart(pola_poli).mark_bar(color='#1F77B4').encode(
+        x=alt.X('Poli:N', title='Poli', sort='-y'),
+        y=alt.Y('y:Q', title='Total Kunjungan'),
+        tooltip=['Poli', 'y']
+    ).properties(height=300, title="Total Kunjungan per Poli")
+    st.altair_chart(chart_poli, use_container_width=True)
+    
+with col2:
+    pola_hari = df_looker_filtered.groupby('Nama_Hari')['y'].sum().reset_index()
+    urutan_hari = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu']
+    chart_hari = alt.Chart(pola_hari).mark_bar(color='#FF7F0E').encode(
+        x=alt.X('Nama_Hari:N', title='Hari', sort=urutan_hari),
+        y=alt.Y('y:Q', title='Total Kunjungan'),
+        tooltip=['Nama_Hari', 'y']
+    ).properties(height=300, title="Akumulasi Kunjungan per Hari")
+    st.altair_chart(chart_hari, use_container_width=True)
+
+# ==========================================
+# 5. VISUALISASI RATA-RATA JAM (DARI DATA FILTERABLE)
+# ==========================================
+st.write("---")
+st.header("⏰ 3. Rata-Rata Kunjungan per Jam Operasional")
+
+# Metode perhitungan benar: dijumlahkan dulu per (Tanggal+Jam), baru dirata-rata per Jam
+sum_hist_harian = df_aktual_filtered.groupby(['Tanggal', 'Jam_Format'])['Jumlah_Pasien_Aktual'].sum().reset_index()
+rata_hist_jam = sum_hist_harian.groupby('Jam_Format')['Jumlah_Pasien_Aktual'].mean().reset_index().round(2)
+
+sum_pred_harian = df_prediksi_filtered.groupby(['Tanggal', 'Jam_Format'])['Jumlah_Pasien_Prediksi'].sum().reset_index()
+rata_pred_jam = sum_pred_harian.groupby('Jam_Format')['Jumlah_Pasien_Prediksi'].mean().reset_index().round(2)
+
+col3, col4 = st.columns(2)
+with col3:
+    chart_rata_hist = alt.Chart(rata_hist_jam).mark_bar(color='#D62728').encode(
+        x=alt.X('Jam_Format:O', title='Jam Operasional'),
+        y=alt.Y('Jumlah_Pasien_Aktual:Q', title='Rata-Rata Pasien'),
+        tooltip=['Jam_Format', 'Jumlah_Pasien_Aktual']
+    ).properties(height=300, title=f"Aktual ({start_h} s/d {end_h})")
+    st.altair_chart(chart_rata_hist, use_container_width=True)
+
+with col4:
+    chart_rata_pred = alt.Chart(rata_pred_jam).mark_bar(color='#9467BD').encode(
+        x=alt.X('Jam_Format:O', title='Jam Operasional'),
+        y=alt.Y('Jumlah_Pasien_Prediksi:Q', title='Rata-Rata Prediksi Pasien'),
+        tooltip=['Jam_Format', 'Jumlah_Pasien_Prediksi']
+    ).properties(height=300, title=f"Prediksi ({start_p} s/d {end_p})")
+    st.altair_chart(chart_rata_pred, use_container_width=True)
+
+# ==========================================
+# 6. EVALUASI MODEL & KEPUTUSAN DSS
+# ==========================================
+st.write("---")
+st.header("✅ 4. Evaluasi Performa Model (MAE & RMSE)")
+st.dataframe(df_eval[['Kluster', 'Poli', 'Mode_Seasonality', 'MAE_CrossValidation', 'RMSE_CrossValidation']], use_container_width=True)
+
+st.write("---")
+st.header("💡 5. Rekomendasi Tindakan (DSS Output)")
+if not rata_pred_jam.empty:
+    jam_puncak = rata_pred_jam.loc[rata_pred_jam['Jumlah_Pasien_Prediksi'].idxmax()]
+    st.error(f"🚨 **Peringatan Penumpukan:** Berdasarkan rentang prediksi yang dipilih, puncak kunjungan diperkirakan terjadi pada jam **{jam_puncak['Jam_Format']}** dengan rata-rata **{jam_puncak['Jumlah_Pasien_Prediksi']} pasien/jam**.")
+    st.markdown(f"""
+    **Rekomendasi Kebijakan bagi Manajemen Puskesmas:**
+    * **Pembatasan Kuota:** Disarankan membatasi pendaftaran pada jam {jam_puncak['Jam_Format']} sesuai nilai prediksi tersebut.
+    * **Distribusi Antrean:** Arahkan pasien non-gawat darurat untuk datang pada jam operasional siang yang secara data lebih lengang.
+    * **Alokasi SDM:** Jangan jadwalkan istirahat bergilir bagi staf pada pukul {jam_puncak['Jam_Format']}.
+    """)
